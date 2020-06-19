@@ -19,7 +19,7 @@ def Main():
         s.send(message.encode('utf-8'))
         print("Message send ", str(message.encode('utf-8')))
         # messaga received from server
-        data = s.recv(1024)
+        data = s.recv(3000000)
 
         # print the received message
         # here it would be a reverse of sent message

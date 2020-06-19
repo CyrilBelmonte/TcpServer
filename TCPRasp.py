@@ -1,38 +1,90 @@
 # Import socket module
 import socket
+import sys
+import numpy as np
+import time
+import threading
+
+from absl import app, flags, logging
+from absl.flags import FLAGS
+
+import myTools.cnn_model as cnn
+
+flags.DEFINE_string('ip', '127.0.0.1', 'default ip')
+flags.DEFINE_integer('port', 12346, 'default port')
+
+np.set_printoptions(threshold=sys.maxsize)
+
+info = []
 
 
-def Main():
-    # local host IP '127.0.0.1'
-    host = '127.0.0.1'
+def parse_message_received(data):
+    parse = data.split(";")
+    return parse
 
-    # Define the port on which you want to connect
-    port = 12346
 
+def get_img(data):
+    tmp_data = data.split(" ")
+    print(tmp_data[1:-1])
+    return
+
+
+def main(_argv):
+    logging.info('load cat modem')
+
+    dog_1 = time.time()
+    dog_model = cnn.get_inception_v2_cat()
+    dog_2 = time.time()
+    logging.info('cat model load in {:.2f}ms'.format((dog_2 - dog_1)))
+
+    logging.info('Initialization connection at {}:{}'.format(FLAGS.ip, FLAGS.port))
+    time_c_1 = time.time()
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((FLAGS.ip, FLAGS.port))
+    time_c_2 = time.time()
+    logging.info('Connected to {}:{} in {:.3f}ms'.format(FLAGS.ip, FLAGS.port, (time_c_2 - time_c_1)))
 
-    # connect to server on local computer
-    s.connect((host, port))
-
-    # message you send to server
     message = "0;RASP;127.0.0.1;CAT;"
-
+    send_1 = time.time()
     s.send(message.encode('utf-8'))
-    print("Message send ", str(message.encode('utf-8')))
+    send_2 = time.time()
+    logging.info('Send identification message {} in {}ms'.format(message, (send_2 - send_1)))
 
     while True:
 
-        # messaga received from server
-        data = s.recv(1024)
-        print(data.decode('utf-8'))
-        # print the received message
-        # here it would be a reverse of sent message
-
-        if data.decode('utf-8') == "close":
+        try:
+            data = s.recv(3000000)
+            message_parsed = parse_message_received(data.decode('utf-8'))
+            logging.info(
+                'message {} size : {:.2f}Mb received'.format(message_parsed[0], (sys.getsizeof(data) / 1000000)))
+            if len(message_parsed) == 4:
+                logging.info('\t image {}'.format(message_parsed[0]))
+                img = eval('np.array(' + message_parsed[2] + ')')
+                process = ThreadCAT(message_parsed[0], img, dog_model, s)
+                process.start()
+            if data.decode('utf-8') == "close":
+                break
+        except (ConnectionResetError, ConnectionRefusedError):
+            logging.info("Server close the connexion or not online")
             break
     # close the connection
     s.close()
 
 
+class ThreadCAT(threading.Thread):
+    def __init__(self, id_img, img, model, s):
+        threading.Thread.__init__(self)
+        self.id_img = id_img
+        self.img = img
+        self.model = model
+        self.s = s
+
+    def run(self):
+        cnn.thread_for_cnn(self.id_img, self.img, self.model, self.s)
+
+
 if __name__ == '__main__':
-    Main()
+    try:
+        app.run(main)
+    except SystemExit:
+        pass
